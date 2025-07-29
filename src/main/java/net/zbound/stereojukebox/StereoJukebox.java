@@ -1,8 +1,8 @@
-package net.zbound.fabrictest;
+package net.zbound.stereojukebox;
 
 import net.fabricmc.api.ModInitializer;
 
-public class FabricTest implements ModInitializer {
+public class StereoJukebox implements ModInitializer {
 
     @Override
     public void onInitialize() {

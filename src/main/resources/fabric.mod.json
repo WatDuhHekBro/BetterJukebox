@@ -1,29 +1,29 @@
 {
   "schemaVersion": 1,
-  "id": "fabrictest",
+  "id": "stereojukebox",
   "version": "${version}",
-  "name": "FabricTest",
-  "description": "",
+  "name": "StereoJukebox",
+  "description": "Makes music discs play in both ears instead of depending on position.",
   "authors": [],
   "contact": {},
-  "license": "MIT",
-  "icon": "assets/fabrictest/icon.png",
+  "license": "GPL-3.0",
+  "icon": "assets/stereojukebox/icon.png",
   "environment": "client",
   "entrypoints": {
     "fabric-datagen": [
-      "net.zbound.fabrictest.client.FabricTestDataGenerator"
+      "net.zbound.stereojukebox.client.StereoJukeboxDataGenerator"
     ],
     "client": [
-      "net.zbound.fabrictest.client.FabricTestClient"
+      "net.zbound.stereojukebox.client.StereoJukeboxClient"
     ],
     "main": [
-      "net.zbound.fabrictest.FabricTest"
+      "net.zbound.stereojukebox.StereoJukebox"
     ]
   },
   "mixins": [
-    "fabrictest.mixins.json",
+    "stereojukebox.mixins.json",
     {
-      "config": "fabrictest.client.mixins.json",
+      "config": "stereojukebox.client.mixins.json",
       "environment": "client"
     }
   ],

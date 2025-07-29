@@ -1,9 +1,9 @@
 {
   "required": true,
   "minVersion": "0.8",
-  "package": "net.zbound.fabrictest.mixin",
+  "package": "net.zbound.stereojukebox.mixin.client",
   "compatibilityLevel": "JAVA_21",
-  "mixins": [
+  "client": [
   ],
   "injectors": {
     "defaultRequire": 1
