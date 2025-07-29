@@ -3,7 +3,7 @@
   "id": "stereojukebox",
   "version": "${version}",
   "name": "StereoJukebox",
-  "description": "Makes music discs play in both ears instead of depending on position.",
+  "description": "Makes music discs play in both ears instead of depending on the player's position.",
   "authors": [],
   "contact": {},
   "license": "GPL-3.0",

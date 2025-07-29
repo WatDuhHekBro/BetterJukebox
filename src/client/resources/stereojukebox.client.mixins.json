@@ -1,9 +1,12 @@
 {
   "required": true,
   "minVersion": "0.8",
-  "package": "net.zbound.stereojukebox.mixin.client",
+  "package": "net.zbound.stereojukebox.client.mixin",
   "compatibilityLevel": "JAVA_21",
   "client": [
+    "AbstractSoundInstanceAccessor",
+    "JukeboxDebugMixin",
+    "JukeboxMixin"
   ],
   "injectors": {
     "defaultRequire": 1
