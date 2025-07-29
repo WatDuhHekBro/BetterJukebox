@@ -10,9 +10,6 @@
   "icon": "assets/stereojukebox/icon.png",
   "environment": "client",
   "entrypoints": {
-    "fabric-datagen": [
-      "net.zbound.stereojukebox.client.StereoJukeboxDataGenerator"
-    ],
     "client": [
       "net.zbound.stereojukebox.client.StereoJukeboxClient"
     ],
@@ -29,7 +26,6 @@
   ],
   "depends": {
     "fabricloader": ">=${loader_version}",
-    "fabric": "*",
     "minecraft": "${minecraft_version}"
   }
 }
