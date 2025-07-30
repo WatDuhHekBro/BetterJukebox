@@ -3,6 +3,7 @@ package net.zbound.stereojukebox.client.mixin;
 import com.google.common.collect.Multimap;
 import net.minecraft.client.sound.*;
 import net.minecraft.sound.SoundCategory;
+import net.minecraft.util.math.Vec3d;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
@@ -10,7 +11,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
-import java.util.List;
+import java.util.Collection;
 import java.util.Map;
 
 // Music Fadeout:
@@ -19,6 +20,13 @@ import java.util.Map;
 
 @Mixin(SoundSystem.class)
 public abstract class JukeboxMixin {
+    private static final double MIN_DISTANCE = 20.0;
+    private static final double MAX_DISTANCE = 40.0;
+    private static final double MIN_DISTANCE_SQUARED = MIN_DISTANCE * MIN_DISTANCE;
+    private static final double MAX_DISTANCE_SQUARED = MAX_DISTANCE * MAX_DISTANCE;
+    private static final double DIVISOR = MAX_DISTANCE_SQUARED - MIN_DISTANCE_SQUARED;
+    private static final double MUSIC_FADE_FACTOR = 0.05; // Fades in 1 second
+
     @Inject(method = "play(Lnet/minecraft/client/sound/SoundInstance;)Lnet/minecraft/client/sound/SoundSystem$PlayResult;", at = @At("HEAD"))
     private void initInjected(SoundInstance sound, CallbackInfoReturnable<SoundSystem.PlayResult> cir) {
         if(sound.getCategory() == SoundCategory.RECORDS) {
@@ -39,9 +47,9 @@ public abstract class JukeboxMixin {
                 //modifiedSound.setZ(5);
 
                 // Make sure to set the relative position to the player's position if attenuation is enabled.
-                modifiedSound.setX(0);
-                modifiedSound.setY(0);
-                modifiedSound.setZ(0);
+                //modifiedSound.setX(0);
+                //modifiedSound.setY(0);
+                //modifiedSound.setZ(0);
             }
 
             //System.out.println(sound.getAttenuationType() + " / " + sound.isRelative() + " / " + sound.getX() + ", " + sound.getY() + " / " + sound.getZ() + " / ");
@@ -58,13 +66,15 @@ public abstract class JukeboxMixin {
     private void injectTick(boolean isPaused, CallbackInfo ci) {
         SoundSystemWrapper wrapper = ((SoundSystemWrapper) this);
         Multimap<SoundCategory, SoundInstance> sounds = wrapper.getSounds();
-        int amountRecords = sounds.get(SoundCategory.RECORDS).size();
+        Collection<SoundInstance> records = sounds.get(SoundCategory.RECORDS);
+        long amountRecordsHearable = records.stream().filter(sound -> sound.getVolume() > 0).count();
         //int amountMusic = sounds.get(SoundCategory.MUSIC).size();
         //System.out.println("REC #" + amountRecords + ", MUS #" + amountMusic);
-        //System.out.println("REC #" + amountRecords);
+        //System.out.println("REC #" + amountRecordsHearable);
+        Vec3d transform = wrapper.getListener().getTransform().position();
 
         if(!isPaused) {
-            if (amountRecords > 0) {
+            if (amountRecordsHearable > 0) {
                 pauseMusic();
             } else {
                 resumeMusic();
@@ -72,6 +82,62 @@ public abstract class JukeboxMixin {
         } else {
             resumeMusic();
         }
+
+        // Dynamically set the volume based on the player's distance for each music disc
+        // This must be outside of the if conditions or else once a music disc is no longer hearable, it won't resume.
+        for(SoundInstance sound : records) {
+            double distanceSquared = transform.squaredDistanceTo(sound.getX(), sound.getY(), sound.getZ());
+
+            /*
+             * Distance
+             * --------
+             * Let's say a max distance of 40 blocks and a min distance of 20 blocks
+             * 0-20 blocks distance is volume 1 and 40+ blocks is volume 0
+             * 0-400 distanceSquared is volume 1 and 1600+ blocks is volume 0
+             *
+             * 1600 - 1681 < 0
+             *
+             * 1600 - 1600 = 0
+             * - 0 / 1600 = 0
+             * - 0 / 1200 = 0
+             *
+             * 1600 - 1521 = 79
+             * - 79 / 1600 = 0.049
+             * - 79 / 1200 = 0.06
+             *
+             * 1600 - 900 = 700
+             * - 700 / 1200 = 0.58 (midpoint is slightly above half volume)
+             *
+             * 1600 - 400 = 1200
+             * - 1200 / 1600 = 0.75 (doesn't take min into account)
+             * - 1200 / 1200 = 1
+             *
+             * 1600 - 1 = 1599
+             * - 1599 / 1600 = 0.99
+             * - 1599 / 1200 > 1
+             *
+             * 1600 - 0 = 1600
+             * - 1600 / 1600 = 1
+             * - 1600 / 1200 > 1
+             */
+
+            double calculatedVolume = (MAX_DISTANCE_SQUARED - distanceSquared) / DIVISOR;
+            calculatedVolume = Math.clamp(calculatedVolume, 0, 1);
+            float adjustedVolume = wrapper.invokeGetAdjustedVolume((float) calculatedVolume, SoundCategory.RECORDS);
+
+            wrapper.getSources().get(sound).run(source -> source.setVolume(adjustedVolume));
+            //System.out.println(distanceSquared + " ==> " + calculatedVolume + " ==> " + adjustedVolume);
+
+            // This doesn't actually modify the volume (once playing).
+            // However, it's an easy way to later check if this music disc sound is still hearable.
+            if(sound instanceof AbstractSoundInstanceAccessor modifiedSound) {
+                modifiedSound.setVolume(adjustedVolume);
+            }
+        }
+
+        // Disregard forward and up, transform.position() is exactly what you're looking for
+        // The player's position isn't under Player, it's the Camera object
+        //System.out.println(transform.position() + " + " + transform.forward() + " + " + transform.up());
 
         // As it turns out, neither Records nor Music are considered ticking sounds
         /*List<TickableSoundInstance> tickingSounds = wrapper.getTickingSounds();

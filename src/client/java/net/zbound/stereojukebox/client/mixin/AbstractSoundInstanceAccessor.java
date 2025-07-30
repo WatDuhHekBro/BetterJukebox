@@ -29,6 +29,8 @@ public interface AbstractSoundInstanceAccessor {
      * Maybe put inject it into the tick() function?
      * Setting above the default 4.0F for music discs won't increase the volume, so it's not going to blast out your ears if you do.
      * It looks like this is how Minecraft does it actually in SoundSystem#getAdjustedVolume(), where the volume is set to 0 to 1, also multiplied by sounds percent slider.
+     *
+     * This only works if you set it initially (at the top of SoundSystem#play()), not when it's already playing.
      * @param volume
      */
     @Accessor("volume")
