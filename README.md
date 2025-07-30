@@ -1,6 +1,6 @@
 # Stereo Jukebox
 
-A quick and dirty fix to make music disc sounds global like the "music" and "ambient" sound categories. Also pauses background music while music discs are playing.
+A quick and dirty fix to make music disc sounds global like the "music" and "ambient" sound categories. Also pauses background music while music discs are playing. Oh, and jukeboxes now start fading at around 20-40 blocks, all while remaining stereo. I should probably clean up this readme.
 
 "Stereo Jukebox" -> Makes jukeboxes play in both ears instead of just one (depending on direction).
 - Direction should have no effect on which ear jukebox music plays in.
