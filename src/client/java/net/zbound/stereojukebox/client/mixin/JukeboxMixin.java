@@ -22,8 +22,8 @@ import java.util.Map;
 
 @Mixin(SoundSystem.class)
 public abstract class JukeboxMixin {
-    private static final double MIN_DISTANCE = 20.0;
-    private static final double MAX_DISTANCE = 40.0;
+    private static final double MIN_DISTANCE = 50.0;
+    private static final double MAX_DISTANCE = 100.0;
     private static final double MIN_DISTANCE_SQUARED = MIN_DISTANCE * MIN_DISTANCE;
     private static final double MAX_DISTANCE_SQUARED = MAX_DISTANCE * MAX_DISTANCE;
     private static final double DIVISOR = MAX_DISTANCE_SQUARED - MIN_DISTANCE_SQUARED;
@@ -61,7 +61,7 @@ public abstract class JukeboxMixin {
 
             //System.out.println(sound.getAttenuationType() + " / " + sound.isRelative() + " / " + sound.getX() + ", " + sound.getY() + " / " + sound.getZ() + " / ");
             //((SoundSystemWrapper) this).invokeStopSounds(null, SoundCategory.MUSIC);
-            //pauseMusic();
+            pauseMusic();
         }
     }
 
@@ -82,11 +82,11 @@ public abstract class JukeboxMixin {
 
         //if(!isPaused) {
         if (amountRecordsHearable > 0) {
-            //pauseMusic();
-            musicFadeOut();
+            pauseMusic();
+            //musicFadeOut();
         } else {
-            //resumeMusic();
-            musicFadeIn();
+            resumeMusic();
+            //musicFadeIn();
         }
         //} else {
             //resumeMusic();
@@ -172,6 +172,11 @@ public abstract class JukeboxMixin {
 
                 if (sound.getCategory() == SoundCategory.MUSIC) {
                     entry.getValue().run(Source::pause);
+
+                    // Used to track the volume manually
+                    /*if(sound instanceof AbstractSoundInstanceAccessor modifiedSound) {
+                        modifiedSound.setVolume(0);
+                    }*/
                 }
             }
         }
@@ -181,6 +186,7 @@ public abstract class JukeboxMixin {
      * Continuous method call to fade out the background music
      *
      * TODO: It seems like this conflicts with MusicTracker's fade to volume, which is why the numbers are inconsistent
+     * Potentially another HashMap?
      */
     @Unique
     private void musicFadeOut() {
@@ -233,6 +239,7 @@ public abstract class JukeboxMixin {
      * Continuous method call to fade in the background music
      *
      * TODO: It seems like this conflicts with MusicTracker's fade to volume, which is why the numbers are inconsistent
+     * Potentially another HashMap?
      */
     @Unique
     private void musicFadeIn() {
