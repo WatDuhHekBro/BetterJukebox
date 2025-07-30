@@ -1,9 +1,12 @@
 package net.zbound.stereojukebox.client.mixin;
 
 import com.google.common.collect.Multimap;
-import net.minecraft.client.sound.*;
-import net.minecraft.sound.SoundCategory;
-import net.minecraft.util.math.Vec3d;
+import com.mojang.blaze3d.audio.Channel;
+import net.minecraft.client.resources.sounds.SoundInstance;
+import net.minecraft.client.sounds.ChannelAccess;
+import net.minecraft.client.sounds.SoundEngine;
+import net.minecraft.sounds.SoundSource;
+import net.minecraft.world.phys.Vec3;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
@@ -20,7 +23,7 @@ import java.util.Map;
 // - Listen for pause, stop, and tick
 // - Somehow lower volume of music source temporarily?
 
-@Mixin(SoundSystem.class)
+@Mixin(SoundEngine.class)
 public abstract class JukeboxMixin {
     private static final double MIN_DISTANCE = 50.0;
     private static final double MAX_DISTANCE = 100.0;
@@ -28,15 +31,15 @@ public abstract class JukeboxMixin {
     private static final double MAX_DISTANCE_SQUARED = MAX_DISTANCE * MAX_DISTANCE;
     private static final double DIVISOR = MAX_DISTANCE_SQUARED - MIN_DISTANCE_SQUARED;
     private static final float MUSIC_FADE_VOLUME_PER_TICK = 0.025f; // Fades in 2 seconds
-    private static final HashMap<SoundInstance, Vec3d> coordinates = new HashMap<>();
+    private static final HashMap<SoundInstance, Vec3> coordinates = new HashMap<>();
 
-    @Inject(method = "play(Lnet/minecraft/client/sound/SoundInstance;)Lnet/minecraft/client/sound/SoundSystem$PlayResult;", at = @At("HEAD"))
-    private void initInjected(SoundInstance sound, CallbackInfoReturnable<SoundSystem.PlayResult> cir) {
-        if(sound.getCategory() == SoundCategory.RECORDS) {
-            coordinates.put(sound, new Vec3d(sound.getX(), sound.getY(), sound.getZ()));
+    @Inject(method = "play", at = @At("HEAD"))
+    private void initInjected(SoundInstance sound, CallbackInfoReturnable<SoundEngine.PlayResult> cir) {
+        if(sound.getSource() == SoundSource.RECORDS) {
+            coordinates.put(sound, new Vec3(sound.getX(), sound.getY(), sound.getZ()));
 
             if(sound instanceof AbstractSoundInstanceAccessor modifiedSound) {
-                modifiedSound.setAttenuationType(SoundInstance.AttenuationType.NONE);
+                modifiedSound.setAttenuationType(SoundInstance.Attenuation.NONE);
                 modifiedSound.setRelative(true);
                 //modifiedSound.setVolume(0.1f);
                 //modifiedSound.setVolume(16f);
@@ -72,13 +75,13 @@ public abstract class JukeboxMixin {
     @Inject(method = "tick(Z)V", at = @At("TAIL"))
     private void injectTick(boolean isPaused, CallbackInfo ci) {
         SoundSystemWrapper wrapper = ((SoundSystemWrapper) this);
-        Multimap<SoundCategory, SoundInstance> sounds = wrapper.getSounds();
-        Collection<SoundInstance> records = sounds.get(SoundCategory.RECORDS);
+        Multimap<SoundSource, SoundInstance> sounds = wrapper.getInstanceBySource();
+        Collection<SoundInstance> records = sounds.get(SoundSource.RECORDS);
         long amountRecordsHearable = records.stream().filter(sound -> sound.getVolume() > 0).count();
         //int amountMusic = sounds.get(SoundCategory.MUSIC).size();
         //System.out.println("REC #" + amountRecords + ", MUS #" + amountMusic);
         //System.out.println("REC #" + amountRecordsHearable);
-        Vec3d transform = wrapper.getListener().getTransform().position();
+        Vec3 transform = wrapper.getListener().getTransform().position();
 
         //if(!isPaused) {
         if (amountRecordsHearable > 0) {
@@ -95,7 +98,7 @@ public abstract class JukeboxMixin {
         // Dynamically set the volume based on the player's distance for each music disc
         // This must be outside of the if conditions or else once a music disc is no longer hearable, it won't resume.
         for(SoundInstance sound : records) {
-            double distanceSquared = transform.squaredDistanceTo(coordinates.get(sound));
+            double distanceSquared = transform.distanceToSqr(coordinates.get(sound));
 
             /*
              * Distance
@@ -133,9 +136,9 @@ public abstract class JukeboxMixin {
             double calculatedVolume = (MAX_DISTANCE_SQUARED - distanceSquared) / DIVISOR;
             calculatedVolume = Math.clamp(calculatedVolume, 0, 1);
             //calculatedVolume = 1;
-            float adjustedVolume = wrapper.invokeGetAdjustedVolume((float) calculatedVolume, SoundCategory.RECORDS);
+            float adjustedVolume = wrapper.invokeGetAdjustedVolume((float) calculatedVolume, SoundSource.RECORDS);
 
-            wrapper.getSources().get(sound).run(source -> source.setVolume(adjustedVolume));
+            wrapper.getInstanceToChannel().get(sound).execute(source -> source.setVolume(adjustedVolume));
             //System.out.println(distanceSquared + " ==> " + calculatedVolume + " ==> " + adjustedVolume);
 
             // This doesn't actually modify the volume (once playing).
@@ -166,12 +169,12 @@ public abstract class JukeboxMixin {
     private void pauseMusic() {
         SoundSystemWrapper wrapper = ((SoundSystemWrapper) this);
 
-        if (wrapper.isStarted()) {
-            for(Map.Entry<SoundInstance, Channel.SourceManager> entry : wrapper.getSources().entrySet()) {
+        if (wrapper.isLoaded()) {
+            for(Map.Entry<SoundInstance, ChannelAccess.ChannelHandle> entry : wrapper.getInstanceToChannel().entrySet()) {
                 SoundInstance sound = entry.getKey();
 
-                if (sound.getCategory() == SoundCategory.MUSIC) {
-                    entry.getValue().run(Source::pause);
+                if (sound.getSource() == SoundSource.MUSIC) {
+                    entry.getValue().execute(Channel::pause);
 
                     // Used to track the volume manually
                     /*if(sound instanceof AbstractSoundInstanceAccessor modifiedSound) {
@@ -192,20 +195,20 @@ public abstract class JukeboxMixin {
     private void musicFadeOut() {
         SoundSystemWrapper wrapper = ((SoundSystemWrapper) this);
 
-        if (wrapper.isStarted()) {
-            for(Map.Entry<SoundInstance, Channel.SourceManager> entry : wrapper.getSources().entrySet()) {
+        if (wrapper.isLoaded()) {
+            for(Map.Entry<SoundInstance, ChannelAccess.ChannelHandle> entry : wrapper.getInstanceToChannel().entrySet()) {
                 SoundInstance sound = entry.getKey();
                 float oldVolume = sound.getVolume();
 
-                if (sound.getCategory() == SoundCategory.MUSIC && oldVolume > 0) {
+                if (sound.getSource() == SoundSource.MUSIC && oldVolume > 0) {
                     float newVolume = Math.max(oldVolume - MUSIC_FADE_VOLUME_PER_TICK, 0);
-                    Channel.SourceManager sourceManager = entry.getValue();
+                    ChannelAccess.ChannelHandle sourceManager = entry.getValue();
 
-                    sourceManager.run(source -> {
+                    sourceManager.execute(source -> {
                         source.setVolume(newVolume);
 
                         if(newVolume <= 0) {
-                            sourceManager.run(Source::pause);
+                            sourceManager.execute(Channel::pause);
                         }
                     });
 
@@ -224,12 +227,12 @@ public abstract class JukeboxMixin {
     private void resumeMusic() {
         SoundSystemWrapper wrapper = ((SoundSystemWrapper) this);
 
-        if (wrapper.isStarted()) {
-            for(Map.Entry<SoundInstance, Channel.SourceManager> entry : wrapper.getSources().entrySet()) {
+        if (wrapper.isLoaded()) {
+            for(Map.Entry<SoundInstance, ChannelAccess.ChannelHandle> entry : wrapper.getInstanceToChannel().entrySet()) {
                 SoundInstance sound = entry.getKey();
 
-                if (sound.getCategory() == SoundCategory.MUSIC) {
-                    entry.getValue().run(Source::resume);
+                if (sound.getSource() == SoundSource.MUSIC) {
+                    entry.getValue().execute(Channel::unpause);
                 }
             }
         }
@@ -245,18 +248,18 @@ public abstract class JukeboxMixin {
     private void musicFadeIn() {
         SoundSystemWrapper wrapper = ((SoundSystemWrapper) this);
 
-        if (wrapper.isStarted()) {
-            for(Map.Entry<SoundInstance, Channel.SourceManager> entry : wrapper.getSources().entrySet()) {
+        if (wrapper.isLoaded()) {
+            for(Map.Entry<SoundInstance, ChannelAccess.ChannelHandle> entry : wrapper.getInstanceToChannel().entrySet()) {
                 SoundInstance sound = entry.getKey();
                 float oldVolume = sound.getVolume();
 
-                if (sound.getCategory() == SoundCategory.MUSIC & oldVolume < 1) {
+                if (sound.getSource() == SoundSource.MUSIC & oldVolume < 1) {
                     float newVolume = Math.min(oldVolume + MUSIC_FADE_VOLUME_PER_TICK, 1);
-                    Channel.SourceManager sourceManager = entry.getValue();
+                    ChannelAccess.ChannelHandle sourceManager = entry.getValue();
 
-                    sourceManager.run(source -> {
+                    sourceManager.execute(source -> {
                         source.setVolume(newVolume);
-                        source.resume();
+                        source.unpause();
                     });
 
                     // Used to track the volume manually
@@ -274,11 +277,11 @@ public abstract class JukeboxMixin {
      * Prevents music discs from being paused in the pause screen, treating them like background music
      */
     @ModifyVariable(method = "pauseAllExcept", at = @At("HEAD"), argsOnly = true)
-    private SoundCategory[] injectIgnoredSoundCategories(SoundCategory... categories) {
-        SoundCategory[] ignoredCategories = new SoundCategory[categories.length + 1];
+    private SoundSource[] injectIgnoredSoundCategories(SoundSource... categories) {
+        SoundSource[] ignoredCategories = new SoundSource[categories.length + 1];
 
         System.arraycopy(categories, 0, ignoredCategories, 0, categories.length);
-        ignoredCategories[categories.length] = SoundCategory.RECORDS;
+        ignoredCategories[categories.length] = SoundSource.RECORDS;
 
         return ignoredCategories;
     }

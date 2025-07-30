@@ -1,7 +1,7 @@
 package net.zbound.stereojukebox.client.mixin;
 
-import net.minecraft.client.sound.AbstractSoundInstance;
-import net.minecraft.client.sound.SoundInstance;
+import net.minecraft.client.resources.sounds.AbstractSoundInstance;
+import net.minecraft.client.resources.sounds.SoundInstance;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.gen.Accessor;
 
@@ -11,10 +11,9 @@ public interface AbstractSoundInstanceAccessor {
     /**
      * Sets whether or not the sound fades as you move away from the source (and theoretically the different levels of fading).
      * However, setting the sound to relative renders this field pointless, as relative sounds are global.
-     * @param attenuationType
      */
-    @Accessor("attenuationType")
-    void setAttenuationType(SoundInstance.AttenuationType attenuationType);
+    @Accessor("attenuation")
+    void setAttenuationType(SoundInstance.Attenuation attenuationType);
 
     /**
      * Sets a sound to be relative to the client (player), meaning it's effectively a global sound. Used for music/ambient sounds.
