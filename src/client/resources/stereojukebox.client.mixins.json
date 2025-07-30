@@ -5,7 +5,8 @@
   "compatibilityLevel": "JAVA_21",
   "client": [
     "AbstractSoundInstanceAccessor",
-    "JukeboxMixin"
+    "JukeboxMixin",
+    "SoundSystemWrapper"
   ],
   "injectors": {
     "defaultRequire": 1
