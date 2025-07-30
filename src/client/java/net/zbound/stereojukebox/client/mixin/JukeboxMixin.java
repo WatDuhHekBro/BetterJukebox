@@ -8,10 +8,12 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.ModifyVariable;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.Map;
 
 // Music Fadeout:
@@ -25,7 +27,8 @@ public abstract class JukeboxMixin {
     private static final double MIN_DISTANCE_SQUARED = MIN_DISTANCE * MIN_DISTANCE;
     private static final double MAX_DISTANCE_SQUARED = MAX_DISTANCE * MAX_DISTANCE;
     private static final double DIVISOR = MAX_DISTANCE_SQUARED - MIN_DISTANCE_SQUARED;
-    private static final double MUSIC_FADE_FACTOR = 0.05; // Fades in 1 second
+    private static final float MUSIC_FADE_VOLUME_PER_TICK = 0.025f; // Fades in 2 seconds
+    private static final HashMap<SoundInstance, Vec3d> coordinates = new HashMap<>();
 
     @Inject(method = "play(Lnet/minecraft/client/sound/SoundInstance;)Lnet/minecraft/client/sound/SoundSystem$PlayResult;", at = @At("HEAD"))
     private void initInjected(SoundInstance sound, CallbackInfoReturnable<SoundSystem.PlayResult> cir) {
@@ -47,6 +50,8 @@ public abstract class JukeboxMixin {
                 //modifiedSound.setZ(5);
 
                 // Make sure to set the relative position to the player's position if attenuation is enabled.
+                // IMPORTANT: Even with attenuation = none and relative = true, if the relative position isn't (0, 0, 0), then it'll favor one ear over the other.
+                // Which means you must store the actual coordinates separately. Memory leak time?
                 //modifiedSound.setX(0);
                 //modifiedSound.setY(0);
                 //modifiedSound.setZ(0);
@@ -73,15 +78,17 @@ public abstract class JukeboxMixin {
         //System.out.println("REC #" + amountRecordsHearable);
         Vec3d transform = wrapper.getListener().getTransform().position();
 
-        if(!isPaused) {
-            if (amountRecordsHearable > 0) {
-                pauseMusic();
-            } else {
-                resumeMusic();
-            }
+        //if(!isPaused) {
+        if (amountRecordsHearable > 0) {
+            //pauseMusic();
+            musicFadeOut();
         } else {
-            resumeMusic();
+            //resumeMusic();
+            musicFadeIn();
         }
+        //} else {
+            //resumeMusic();
+        //}
 
         // Dynamically set the volume based on the player's distance for each music disc
         // This must be outside of the if conditions or else once a music disc is no longer hearable, it won't resume.
@@ -123,6 +130,7 @@ public abstract class JukeboxMixin {
 
             double calculatedVolume = (MAX_DISTANCE_SQUARED - distanceSquared) / DIVISOR;
             calculatedVolume = Math.clamp(calculatedVolume, 0, 1);
+            calculatedVolume = 1;
             float adjustedVolume = wrapper.invokeGetAdjustedVolume((float) calculatedVolume, SoundCategory.RECORDS);
 
             wrapper.getSources().get(sound).run(source -> source.setVolume(adjustedVolume));
@@ -159,11 +167,46 @@ public abstract class JukeboxMixin {
         if (wrapper.isStarted()) {
             for(Map.Entry<SoundInstance, Channel.SourceManager> entry : wrapper.getSources().entrySet()) {
                 SoundInstance sound = entry.getKey();
+
                 if (sound.getCategory() == SoundCategory.MUSIC) {
                     entry.getValue().run(Source::pause);
-                    /*if(sound instanceof AbstractSoundInstanceAccessor modifiedSound) {
-                        modifiedSound.setVolume(0);
-                    }*/
+                }
+            }
+        }
+    }
+
+    /**
+     * Continuous method call to fade out the background music
+     *
+     * TODO: It seems like this conflicts with MusicTracker's fade to volume, which is why the numbers are inconsistent
+     */
+    @Unique
+    private void musicFadeOut() {
+        SoundSystemWrapper wrapper = ((SoundSystemWrapper) this);
+
+        if (wrapper.isStarted()) {
+            for(Map.Entry<SoundInstance, Channel.SourceManager> entry : wrapper.getSources().entrySet()) {
+                SoundInstance sound = entry.getKey();
+                float oldVolume = sound.getVolume();
+
+                if (sound.getCategory() == SoundCategory.MUSIC && oldVolume > 0) {
+                    float newVolume = Math.max(oldVolume - MUSIC_FADE_VOLUME_PER_TICK, 0);
+                    Channel.SourceManager sourceManager = entry.getValue();
+
+                    sourceManager.run(source -> {
+                        source.setVolume(newVolume);
+
+                        if(newVolume <= 0) {
+                            sourceManager.run(Source::pause);
+                        }
+                    });
+
+                    // Used to track the volume manually
+                    if(sound instanceof AbstractSoundInstanceAccessor modifiedSound) {
+                        modifiedSound.setVolume(newVolume);
+                    }
+
+                    //System.out.println("Fade Out: " + oldVolume + " ==> " + newVolume);
                 }
             }
         }
@@ -176,11 +219,59 @@ public abstract class JukeboxMixin {
         if (wrapper.isStarted()) {
             for(Map.Entry<SoundInstance, Channel.SourceManager> entry : wrapper.getSources().entrySet()) {
                 SoundInstance sound = entry.getKey();
+
                 if (sound.getCategory() == SoundCategory.MUSIC) {
                     entry.getValue().run(Source::resume);
                 }
             }
         }
+    }
+
+    /**
+     * Continuous method call to fade in the background music
+     *
+     * TODO: It seems like this conflicts with MusicTracker's fade to volume, which is why the numbers are inconsistent
+     */
+    @Unique
+    private void musicFadeIn() {
+        SoundSystemWrapper wrapper = ((SoundSystemWrapper) this);
+
+        if (wrapper.isStarted()) {
+            for(Map.Entry<SoundInstance, Channel.SourceManager> entry : wrapper.getSources().entrySet()) {
+                SoundInstance sound = entry.getKey();
+                float oldVolume = sound.getVolume();
+
+                if (sound.getCategory() == SoundCategory.MUSIC & oldVolume < 1) {
+                    float newVolume = Math.min(oldVolume + MUSIC_FADE_VOLUME_PER_TICK, 1);
+                    Channel.SourceManager sourceManager = entry.getValue();
+
+                    sourceManager.run(source -> {
+                        source.setVolume(newVolume);
+                        source.resume();
+                    });
+
+                    // Used to track the volume manually
+                    if(sound instanceof AbstractSoundInstanceAccessor modifiedSound) {
+                        modifiedSound.setVolume(newVolume);
+                    }
+
+                    //System.out.println("Fade In: " + oldVolume + " ==> " + newVolume);
+                }
+            }
+        }
+    }
+
+    /**
+     * Prevents music discs from being paused in the pause screen, treating them like background music
+     */
+    @ModifyVariable(method = "pauseAllExcept", at = @At("HEAD"), argsOnly = true)
+    private SoundCategory[] injectIgnoredSoundCategories(SoundCategory... categories) {
+        SoundCategory[] ignoredCategories = new SoundCategory[categories.length + 1];
+
+        System.arraycopy(categories, 0, ignoredCategories, 0, categories.length);
+        ignoredCategories[categories.length] = SoundCategory.RECORDS;
+
+        return ignoredCategories;
     }
 }
 

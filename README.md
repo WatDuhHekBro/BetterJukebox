@@ -6,7 +6,8 @@ A quick and dirty fix to make music disc sounds global like the "music" and "amb
 - Direction should have no effect on which ear jukebox music plays in.
 - Make volume depend exactly on distance from jukebox? Configurable
 - Make music fade out when near a jukebox?
-- Maybe instead replace the pause menu with the jukebox music so it's less jarring?
+- Maybe instead replace the pause menu with the jukebox music so it's less jarring? See why the "music" category is the exception
+  - Debug `pauseAllExcept`, it's very clearly for music
 
 # Known Issues
 
