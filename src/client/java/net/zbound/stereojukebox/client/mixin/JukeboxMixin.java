@@ -33,6 +33,8 @@ public abstract class JukeboxMixin {
     @Inject(method = "play(Lnet/minecraft/client/sound/SoundInstance;)Lnet/minecraft/client/sound/SoundSystem$PlayResult;", at = @At("HEAD"))
     private void initInjected(SoundInstance sound, CallbackInfoReturnable<SoundSystem.PlayResult> cir) {
         if(sound.getCategory() == SoundCategory.RECORDS) {
+            coordinates.put(sound, new Vec3d(sound.getX(), sound.getY(), sound.getZ()));
+
             if(sound instanceof AbstractSoundInstanceAccessor modifiedSound) {
                 modifiedSound.setAttenuationType(SoundInstance.AttenuationType.NONE);
                 modifiedSound.setRelative(true);
@@ -52,9 +54,9 @@ public abstract class JukeboxMixin {
                 // Make sure to set the relative position to the player's position if attenuation is enabled.
                 // IMPORTANT: Even with attenuation = none and relative = true, if the relative position isn't (0, 0, 0), then it'll favor one ear over the other.
                 // Which means you must store the actual coordinates separately. Memory leak time?
-                //modifiedSound.setX(0);
-                //modifiedSound.setY(0);
-                //modifiedSound.setZ(0);
+                modifiedSound.setX(0);
+                modifiedSound.setY(0);
+                modifiedSound.setZ(0);
             }
 
             //System.out.println(sound.getAttenuationType() + " / " + sound.isRelative() + " / " + sound.getX() + ", " + sound.getY() + " / " + sound.getZ() + " / ");
@@ -93,7 +95,7 @@ public abstract class JukeboxMixin {
         // Dynamically set the volume based on the player's distance for each music disc
         // This must be outside of the if conditions or else once a music disc is no longer hearable, it won't resume.
         for(SoundInstance sound : records) {
-            double distanceSquared = transform.squaredDistanceTo(sound.getX(), sound.getY(), sound.getZ());
+            double distanceSquared = transform.squaredDistanceTo(coordinates.get(sound));
 
             /*
              * Distance
@@ -130,7 +132,7 @@ public abstract class JukeboxMixin {
 
             double calculatedVolume = (MAX_DISTANCE_SQUARED - distanceSquared) / DIVISOR;
             calculatedVolume = Math.clamp(calculatedVolume, 0, 1);
-            calculatedVolume = 1;
+            //calculatedVolume = 1;
             float adjustedVolume = wrapper.invokeGetAdjustedVolume((float) calculatedVolume, SoundCategory.RECORDS);
 
             wrapper.getSources().get(sound).run(source -> source.setVolume(adjustedVolume));

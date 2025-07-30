@@ -13,6 +13,7 @@ A quick and dirty fix to make music disc sounds global like the "music" and "amb
 
 - Random audio glitches as the music automatically tries to unpause itself (because music must be continuously paused while any music disc sounds exist)
 - Some inefficient code that might possibly slow down your game (whoops)
+- HashMap memory leak in stored coordinates, not exactly clear yet what's the best way to resolve, but probably not severe
 
 # Project Cleanup / Goals
 
