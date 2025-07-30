@@ -1,4 +1,4 @@
-package net.zbound.stereojukebox.client.mixin;
+package net.zbound.neoforgetest.mixin;
 
 import net.minecraft.client.resources.sounds.AbstractSoundInstance;
 import net.minecraft.client.resources.sounds.SoundInstance;

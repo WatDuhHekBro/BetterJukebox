@@ -1,4 +1,4 @@
-package net.zbound.stereojukebox.client.mixin;
+package net.zbound.neoforgetest.mixin;
 
 import com.google.common.collect.Multimap;
 import com.mojang.blaze3d.audio.Channel;
