@@ -3,7 +3,6 @@ package net.zbound.betterjukebox.mixin.client;
 import com.google.common.collect.Multimap;
 import com.mojang.blaze3d.audio.Listener;
 import net.minecraft.client.resources.sounds.SoundInstance;
-import net.minecraft.client.resources.sounds.TickableSoundInstance;
 import net.minecraft.client.sounds.ChannelAccess;
 import net.minecraft.client.sounds.SoundEngine;
 import net.minecraft.resources.ResourceLocation;
@@ -13,7 +12,6 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.gen.Accessor;
 import org.spongepowered.asm.mixin.gen.Invoker;
 
-import java.util.List;
 import java.util.Map;
 
 @Mixin(SoundEngine.class)
@@ -28,13 +26,10 @@ public interface SoundEngineWrapper {
     Multimap<SoundSource, SoundInstance> getInstanceBySource();
 
     @Accessor
-    List<TickableSoundInstance> getTickingSounds();
-
-    @Accessor
     Listener getListener();
 
     @Invoker("stop")
-    void invokeStopSounds(@Nullable ResourceLocation id, @Nullable SoundSource category);
+    void stopSounds(@Nullable ResourceLocation id, @Nullable SoundSource category);
 
     /**
      * Use this function to adjust the volume based on the user's volume slider for that category.
@@ -44,5 +39,5 @@ public interface SoundEngineWrapper {
      * @return The new volume adjusted for the user's saved setting for that sound category
      */
     @Invoker("calculateVolume")
-    float invokeGetAdjustedVolume(float volume, SoundSource category);
+    float calculateAdjustedVolume(float volume, SoundSource category);
 }
