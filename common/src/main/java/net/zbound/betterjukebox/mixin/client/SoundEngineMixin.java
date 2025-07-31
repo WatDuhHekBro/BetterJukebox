@@ -84,9 +84,9 @@ public abstract class SoundEngineMixin {
         Vec3 playerPosition = wrapper.getListener().getTransform().position();
 
         if (amountRecordsHearable > 0) {
-            betterJukebox$musicFadeOut();
+            musicFadeOut();
         } else {
-            betterJukebox$musicFadeIn();
+            musicFadeIn();
         }
 
         for (SoundInstance sound : records) {
@@ -164,7 +164,7 @@ public abstract class SoundEngineMixin {
     }
 
     @Unique
-    private void betterJukebox$setMusicVolumeAndHandlePausing() {
+    private void setMusicVolumeAndHandlePausing() {
         if (!wrapper.isLoaded()) {
             return;
         }
@@ -202,14 +202,14 @@ public abstract class SoundEngineMixin {
      * Ticking method call to fade out the background music if necessary.
      */
     @Unique
-    private void betterJukebox$musicFadeOut() {
+    private void musicFadeOut() {
         if (currentMusicVolumeFactor > 0) {
             currentMusicVolumeFactor = Math.max(currentMusicVolumeFactor - MUSIC_VOLUME_PER_TICK_TO_FADE_OUT, 0);
-            betterJukebox$setMusicVolumeAndHandlePausing();
+            setMusicVolumeAndHandlePausing();
         } else {
             // If you're not continuously pausing the music, it comes back automatically.
             // This is a separation branch/function to avoid unnecessary calculations.
-            betterJukebox$pauseMusic();
+            pauseMusic();
         }
     }
 
@@ -217,15 +217,15 @@ public abstract class SoundEngineMixin {
      * Ticking method call to fade in the background music if necessary.
      */
     @Unique
-    private void betterJukebox$musicFadeIn() {
+    private void musicFadeIn() {
         if (currentMusicVolumeFactor < 1) {
             currentMusicVolumeFactor = Math.min(currentMusicVolumeFactor + MUSIC_VOLUME_PER_TICK_TO_FADE_IN, 1);
-            betterJukebox$setMusicVolumeAndHandlePausing();
+            setMusicVolumeAndHandlePausing();
         }
     }
 
     @Unique
-    private void betterJukebox$pauseMusic() {
+    private void pauseMusic() {
         if (!wrapper.isLoaded()) {
             return;
         }

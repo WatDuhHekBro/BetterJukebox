@@ -8,8 +8,6 @@
   "client": [
     "client.AbstractSoundInstanceWrapper",
     "client.MixinMinecraft",
-    "client.MusicManagerMixin",
-    "client.MusicManagerWrapper",
     "client.SoundEngineMixin",
     "client.SoundEngineWrapper"
   ],
