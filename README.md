@@ -20,3 +20,7 @@ A variety of jukebox tweaks to make them behave like background music instead of
 
 - Remove unnecessary template files (e.g. server/main)
 - Is the main client needed?
+
+# Development
+
+- Building: `gradle :fabric:build && gradle :neoforge:build && gradle :forge:build` (find in `/<subproject>/build/libs`)
