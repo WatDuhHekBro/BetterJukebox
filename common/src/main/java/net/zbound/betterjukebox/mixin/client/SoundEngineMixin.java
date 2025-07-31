@@ -32,7 +32,13 @@ public abstract class SoundEngineMixin {
     @Unique
     private static final double DIVISOR = MAX_DISTANCE_SQUARED - MIN_DISTANCE_SQUARED;
     @Unique
-    private static final float MUSIC_FADE_VOLUME_PER_TICK = 0.025f; // Fades in 2 seconds
+    private static final int TICKS_TO_FULLY_FADE_OUT = 20;
+    @Unique
+    private static final int TICKS_TO_FULLY_FADE_IN = 40;
+    @Unique
+    private static final float MUSIC_VOLUME_PER_TICK_TO_FADE_OUT = 1f / TICKS_TO_FULLY_FADE_OUT;
+    @Unique
+    private static final float MUSIC_VOLUME_PER_TICK_TO_FADE_IN = 1f / TICKS_TO_FULLY_FADE_IN;
     /**
      * Used to track the original coordinates of jukebox sounds.
      * <p>
@@ -40,6 +46,18 @@ public abstract class SoundEngineMixin {
      */
     @Unique
     private static final Map<SoundInstance, Vec3> coordinates = new HashMap<>();
+    private final SoundEngineWrapper wrapper = (SoundEngineWrapper) this;
+    /**
+     * You can safely assume that there'll only be one music track playing.
+     * <p>
+     * Since different music tracks have different volumes, multiply the existing volume by a factor of 0 to 1 to match that.
+     * <p>
+     * IMPORTANT: You'll run into a lot of issues if you try to forcefully modify the SoundInstance volume directly to keep track of the volume, because the MusicManager probably tries to change it back to normal, resulting in a max volume of 0.4 heading towards 0.01666667 indefinitely for example. That's why you need to keep track of the volume separately, not try to store it on the SoundInstance.
+     * <p>
+     * Start at 1 because music should be unaffected by default.
+     */
+    @Unique
+    private float currentMusicVolumeFactor = 1;
     @Unique
     private boolean wasMusicPaused = false;
 
@@ -58,16 +76,11 @@ public abstract class SoundEngineMixin {
             modifiedSound.setX(0);
             modifiedSound.setY(0);
             modifiedSound.setZ(0);
-
-            //((SoundSystemWrapper) this).stopSounds(null, SoundCategory.MUSIC);
-            betterJukebox$pauseMusic();
-            wasMusicPaused = true;
         }
     }
 
     @Inject(method = "tick(Z)V", at = @At("TAIL"))
     private void injectTick(boolean isPaused, CallbackInfo ci) {
-        SoundEngineWrapper wrapper = ((SoundEngineWrapper) this);
         Multimap<SoundSource, SoundInstance> sounds = wrapper.getInstanceBySource();
         // Neither music/ambient/records are considered ticking sounds, so looping through ticking sounds is empty
         Collection<SoundInstance> records = sounds.get(SoundSource.RECORDS);
@@ -75,19 +88,9 @@ public abstract class SoundEngineMixin {
         Vec3 playerPosition = wrapper.getListener().getTransform().position();
 
         if (amountRecordsHearable > 0) {
-            // The music seems to come back automatically if you only pause music the first tick (on SoundEngine#play())
-            // TODO: Figure out why this happens, inspect the MusicTracker.
-            betterJukebox$pauseMusic();
-            wasMusicPaused = true;
-
-            //musicFadeOut();
+            betterJukebox$musicFadeOut();
         } else {
-            if (wasMusicPaused) {
-                betterJukebox$resumeMusic();
-                wasMusicPaused = false;
-            }
-
-            //musicFadeIn();
+            betterJukebox$musicFadeIn();
         }
 
         // Dynamically set the volume of each music disc based on the player's distance from the corresponding jukebox.
@@ -152,106 +155,79 @@ public abstract class SoundEngineMixin {
     }
 
     @Unique
-    private void betterJukebox$pauseMusic() {
-        SoundEngineWrapper wrapper = ((SoundEngineWrapper) this);
+    private void betterJukebox$setMusicVolumeAndHandlePausing() {
+        if (!wrapper.isLoaded()) {
+            return;
+        }
 
-        if (wrapper.isLoaded()) {
-            for (Map.Entry<SoundInstance, ChannelAccess.ChannelHandle> entry : wrapper.getInstanceToChannel().entrySet()) {
-                SoundInstance sound = entry.getKey();
+        for (Map.Entry<SoundInstance, ChannelAccess.ChannelHandle> entry : wrapper.getInstanceToChannel().entrySet()) {
+            SoundInstance sound = entry.getKey();
 
-                if (sound.getSource() == SoundSource.MUSIC) {
-                    entry.getValue().execute(Channel::pause);
+            if (sound.getSource() == SoundSource.MUSIC) {
+                ChannelAccess.ChannelHandle sourceManager = entry.getValue();
+                float maxVolume = sound.getVolume(); // Usually 1.0 for C418 music and 0.4 for newer music
 
-                    /*if(sound instanceof AbstractSoundInstanceAccessor modifiedSound) {
-                        modifiedSound.trackVolumeForReferenceOnly(0);
-                    }*/
-                }
+                sourceManager.execute(source -> {
+                    // Originally, unpausing the game briefly resumed the music before it got paused again, resulting in what effectively sounds like an audio glitch.
+                    // The good news is that by making sure the volume is zero first, it effectively solves this issue by playing that brief audio clip at zero volume.
+                    // Before, it would briefly unpause at volume 1.0 for example, whereas with this, it briefly unpauses at volume 0.0.
+                    // Theoretically, the only time you might notice it is when rapidly pausing/unpausing as the music is fading out, but I can't seem to notice it, so it should be fine.
+                    source.setVolume(wrapper.calculateAdjustedVolume(maxVolume * currentMusicVolumeFactor, SoundSource.MUSIC));
+
+                    if (currentMusicVolumeFactor <= 0 && !wasMusicPaused) {
+                        sourceManager.execute(Channel::pause);
+                        wasMusicPaused = true;
+                        //System.out.println("Pausing music...");
+                    } else if (currentMusicVolumeFactor > 0 && wasMusicPaused) {
+                        sourceManager.execute(Channel::unpause);
+                        wasMusicPaused = false;
+                        //System.out.println("Resuming music...");
+                    }
+
+                    //System.out.println("Music Volume Adjustment: " + maxVolume + " * " + currentMusicVolumeFactor + " = " + maxVolume * currentMusicVolumeFactor + " (" + wasMusicPaused + ")");
+                });
             }
         }
     }
 
     /**
-     * Continuous method call to fade out the background music
-     * <p>
-     * TODO: It seems like this conflicts with MusicTracker's fade to volume, which is why the numbers are inconsistent
-     * Potentially another HashMap?
+     * Ticking method call to fade out the background music if necessary.
      */
     @Unique
     private void betterJukebox$musicFadeOut() {
-        SoundEngineWrapper wrapper = ((SoundEngineWrapper) this);
-
-        if (wrapper.isLoaded()) {
-            for (Map.Entry<SoundInstance, ChannelAccess.ChannelHandle> entry : wrapper.getInstanceToChannel().entrySet()) {
-                SoundInstance sound = entry.getKey();
-                float oldVolume = sound.getVolume();
-
-                if (sound.getSource() == SoundSource.MUSIC && oldVolume > 0) {
-                    float newVolume = Math.max(oldVolume - MUSIC_FADE_VOLUME_PER_TICK, 0);
-                    ChannelAccess.ChannelHandle sourceManager = entry.getValue();
-
-                    sourceManager.execute(source -> {
-                        source.setVolume(newVolume);
-
-                        if (newVolume <= 0) {
-                            sourceManager.execute(Channel::pause);
-                        }
-                    });
-
-                    if (sound instanceof AbstractSoundInstanceWrapper modifiedSound) {
-                        modifiedSound.trackVolumeForReferenceOnly(newVolume);
-                    }
-
-                    //System.out.println("Fade Out: " + oldVolume + " ==> " + newVolume);
-                }
-            }
-        }
-    }
-
-    @Unique
-    private void betterJukebox$resumeMusic() {
-        SoundEngineWrapper wrapper = ((SoundEngineWrapper) this);
-
-        if (wrapper.isLoaded()) {
-            for (Map.Entry<SoundInstance, ChannelAccess.ChannelHandle> entry : wrapper.getInstanceToChannel().entrySet()) {
-                SoundInstance sound = entry.getKey();
-
-                if (sound.getSource() == SoundSource.MUSIC) {
-                    entry.getValue().execute(Channel::unpause);
-                }
-            }
+        if (currentMusicVolumeFactor > 0) {
+            currentMusicVolumeFactor = Math.max(currentMusicVolumeFactor - MUSIC_VOLUME_PER_TICK_TO_FADE_OUT, 0);
+            betterJukebox$setMusicVolumeAndHandlePausing();
+        } else {
+            // If you're not continuously pausing the music, it comes back automatically.
+            // This is a separation branch/function to avoid unnecessary calculations.
+            betterJukebox$pauseMusic();
         }
     }
 
     /**
-     * Continuous method call to fade in the background music
-     * <p>
-     * TODO: It seems like this conflicts with MusicTracker's fade to volume, which is why the numbers are inconsistent
-     * Potentially another HashMap?
+     * Ticking method call to fade in the background music if necessary.
      */
     @Unique
     private void betterJukebox$musicFadeIn() {
-        SoundEngineWrapper wrapper = ((SoundEngineWrapper) this);
+        if (currentMusicVolumeFactor < 1) {
+            currentMusicVolumeFactor = Math.min(currentMusicVolumeFactor + MUSIC_VOLUME_PER_TICK_TO_FADE_IN, 1);
+            betterJukebox$setMusicVolumeAndHandlePausing();
+        }
+    }
 
-        if (wrapper.isLoaded()) {
-            for (Map.Entry<SoundInstance, ChannelAccess.ChannelHandle> entry : wrapper.getInstanceToChannel().entrySet()) {
-                SoundInstance sound = entry.getKey();
-                float oldVolume = sound.getVolume();
+    @Unique
+    private void betterJukebox$pauseMusic() {
+        if (!wrapper.isLoaded()) {
+            return;
+        }
 
-                if (sound.getSource() == SoundSource.MUSIC & oldVolume < 1) {
-                    float newVolume = Math.min(oldVolume + MUSIC_FADE_VOLUME_PER_TICK, 1);
-                    ChannelAccess.ChannelHandle sourceManager = entry.getValue();
+        for (Map.Entry<SoundInstance, ChannelAccess.ChannelHandle> entry : wrapper.getInstanceToChannel().entrySet()) {
+            SoundInstance sound = entry.getKey();
 
-                    sourceManager.execute(source -> {
-                        source.setVolume(newVolume);
-                        source.unpause();
-                    });
-
-                    if (sound instanceof AbstractSoundInstanceWrapper modifiedSound) {
-                        modifiedSound.trackVolumeForReferenceOnly(newVolume);
-                    }
-
-                    //System.out.println("Fade In: " + oldVolume + " ==> " + newVolume);
-                }
+            if (sound.getSource() == SoundSource.MUSIC) {
+                entry.getValue().execute(Channel::pause);
+                //System.out.println("Pausing music...");
             }
         }
     }

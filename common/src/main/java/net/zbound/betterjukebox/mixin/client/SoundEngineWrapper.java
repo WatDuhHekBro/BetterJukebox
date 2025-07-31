@@ -5,9 +5,7 @@ import com.mojang.blaze3d.audio.Listener;
 import net.minecraft.client.resources.sounds.SoundInstance;
 import net.minecraft.client.sounds.ChannelAccess;
 import net.minecraft.client.sounds.SoundEngine;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.sounds.SoundSource;
-import org.jetbrains.annotations.Nullable;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.gen.Accessor;
 import org.spongepowered.asm.mixin.gen.Invoker;
@@ -27,9 +25,6 @@ public interface SoundEngineWrapper {
 
     @Accessor
     Listener getListener();
-
-    @Invoker("stop")
-    void stopSounds(@Nullable ResourceLocation id, @Nullable SoundSource category);
 
     /**
      * Use this function to adjust the volume based on the user's volume slider for that category.
