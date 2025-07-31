@@ -1,4 +1,4 @@
-package net.zbound.betterjukebox.mixin;
+package net.zbound.betterjukebox.mixin.client;
 
 import com.google.common.collect.Multimap;
 import com.mojang.blaze3d.audio.Channel;
@@ -7,6 +7,7 @@ import net.minecraft.client.sounds.ChannelAccess;
 import net.minecraft.client.sounds.SoundEngine;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.phys.Vec3;
+import net.zbound.betterjukebox.util.SimpleSoundInstanceData;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
@@ -16,7 +17,6 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 import java.util.Collection;
-import java.util.HashMap;
 import java.util.Map;
 
 // Music Fadeout:
@@ -24,21 +24,21 @@ import java.util.Map;
 // - Somehow lower volume of music source temporarily?
 
 @Mixin(SoundEngine.class)
-public abstract class JukeboxMixin {
+public abstract class SoundEngineMixin {
     private static final double MIN_DISTANCE = 50.0;
     private static final double MAX_DISTANCE = 100.0;
     private static final double MIN_DISTANCE_SQUARED = MIN_DISTANCE * MIN_DISTANCE;
     private static final double MAX_DISTANCE_SQUARED = MAX_DISTANCE * MAX_DISTANCE;
     private static final double DIVISOR = MAX_DISTANCE_SQUARED - MIN_DISTANCE_SQUARED;
     private static final float MUSIC_FADE_VOLUME_PER_TICK = 0.025f; // Fades in 2 seconds
-    private static final HashMap<SoundInstance, Vec3> coordinates = new HashMap<>();
+    //private static final HashMap<SoundInstance, Vec3> coordinates = new HashMap<>();
 
     @Inject(method = "play", at = @At("HEAD"))
     private void initInjected(SoundInstance sound, CallbackInfoReturnable<SoundEngine.PlayResult> cir) {
-        if(sound.getSource() == SoundSource.RECORDS) {
-            coordinates.put(sound, new Vec3(sound.getX(), sound.getY(), sound.getZ()));
+        if (sound.getSource() == SoundSource.RECORDS) {
+            /*coordinates.put(sound, new Vec3(sound.getX(), sound.getY(), sound.getZ()));
 
-            if(sound instanceof AbstractSoundInstanceAccessor modifiedSound) {
+            if (sound instanceof AbstractSoundInstanceWrapper modifiedSound) {
                 modifiedSound.setAttenuationType(SoundInstance.Attenuation.NONE);
                 modifiedSound.setRelative(true);
                 //modifiedSound.setVolume(0.1f);
@@ -60,11 +60,11 @@ public abstract class JukeboxMixin {
                 modifiedSound.setX(0);
                 modifiedSound.setY(0);
                 modifiedSound.setZ(0);
-            }
+            }*/
 
-            //System.out.println(sound.getAttenuationType() + " / " + sound.isRelative() + " / " + sound.getX() + ", " + sound.getY() + " / " + sound.getZ() + " / ");
+            System.out.println(sound.getAttenuation() + " / " + sound.isRelative() + " / " + sound.getX() + ", " + sound.getY() + " / " + sound.getZ() + " / ");
             //((SoundSystemWrapper) this).invokeStopSounds(null, SoundCategory.MUSIC);
-            pauseMusic();
+            betterJukebox$pauseMusic();
         }
     }
 
@@ -74,7 +74,7 @@ public abstract class JukeboxMixin {
     // TODO: Use booleans to keep track of last amountRecords or check if music is already resumed (so you don't unnecessarily repeat that)
     @Inject(method = "tick(Z)V", at = @At("TAIL"))
     private void injectTick(boolean isPaused, CallbackInfo ci) {
-        SoundSystemWrapper wrapper = ((SoundSystemWrapper) this);
+        SoundEngineWrapper wrapper = ((SoundEngineWrapper) this);
         Multimap<SoundSource, SoundInstance> sounds = wrapper.getInstanceBySource();
         Collection<SoundInstance> records = sounds.get(SoundSource.RECORDS);
         long amountRecordsHearable = records.stream().filter(sound -> sound.getVolume() > 0).count();
@@ -85,66 +85,69 @@ public abstract class JukeboxMixin {
 
         //if(!isPaused) {
         if (amountRecordsHearable > 0) {
-            pauseMusic();
+            betterJukebox$pauseMusic();
             //musicFadeOut();
         } else {
-            resumeMusic();
+            betterJukebox$resumeMusic();
             //musicFadeIn();
         }
         //} else {
-            //resumeMusic();
+        //resumeMusic();
         //}
 
         // Dynamically set the volume based on the player's distance for each music disc
         // This must be outside of the if conditions or else once a music disc is no longer hearable, it won't resume.
-        for(SoundInstance sound : records) {
-            double distanceSquared = transform.distanceToSqr(coordinates.get(sound));
+        for (SoundInstance sound : records) {
+            if (sound instanceof SimpleSoundInstanceData soundData) {
+                Vec3 originalCoordinates = soundData.betterJukebox$getOriginalCoordinates();
+                double distanceSquared = transform.distanceToSqr(originalCoordinates);
 
-            /*
-             * Distance
-             * --------
-             * Let's say a max distance of 40 blocks and a min distance of 20 blocks
-             * 0-20 blocks distance is volume 1 and 40+ blocks is volume 0
-             * 0-400 distanceSquared is volume 1 and 1600+ blocks is volume 0
-             *
-             * 1600 - 1681 < 0
-             *
-             * 1600 - 1600 = 0
-             * - 0 / 1600 = 0
-             * - 0 / 1200 = 0
-             *
-             * 1600 - 1521 = 79
-             * - 79 / 1600 = 0.049
-             * - 79 / 1200 = 0.06
-             *
-             * 1600 - 900 = 700
-             * - 700 / 1200 = 0.58 (midpoint is slightly above half volume)
-             *
-             * 1600 - 400 = 1200
-             * - 1200 / 1600 = 0.75 (doesn't take min into account)
-             * - 1200 / 1200 = 1
-             *
-             * 1600 - 1 = 1599
-             * - 1599 / 1600 = 0.99
-             * - 1599 / 1200 > 1
-             *
-             * 1600 - 0 = 1600
-             * - 1600 / 1600 = 1
-             * - 1600 / 1200 > 1
-             */
+                /*
+                 * Distance
+                 * --------
+                 * Let's say a max distance of 40 blocks and a min distance of 20 blocks
+                 * 0-20 blocks distance is volume 1 and 40+ blocks is volume 0
+                 * 0-400 distanceSquared is volume 1 and 1600+ blocks is volume 0
+                 *
+                 * 1600 - 1681 < 0
+                 *
+                 * 1600 - 1600 = 0
+                 * - 0 / 1600 = 0
+                 * - 0 / 1200 = 0
+                 *
+                 * 1600 - 1521 = 79
+                 * - 79 / 1600 = 0.049
+                 * - 79 / 1200 = 0.06
+                 *
+                 * 1600 - 900 = 700
+                 * - 700 / 1200 = 0.58 (midpoint is slightly above half volume)
+                 *
+                 * 1600 - 400 = 1200
+                 * - 1200 / 1600 = 0.75 (doesn't take min into account)
+                 * - 1200 / 1200 = 1
+                 *
+                 * 1600 - 1 = 1599
+                 * - 1599 / 1600 = 0.99
+                 * - 1599 / 1200 > 1
+                 *
+                 * 1600 - 0 = 1600
+                 * - 1600 / 1600 = 1
+                 * - 1600 / 1200 > 1
+                 */
 
-            double calculatedVolume = (MAX_DISTANCE_SQUARED - distanceSquared) / DIVISOR;
-            calculatedVolume = Math.clamp(calculatedVolume, 0, 1);
-            //calculatedVolume = 1;
-            float adjustedVolume = wrapper.invokeGetAdjustedVolume((float) calculatedVolume, SoundSource.RECORDS);
+                double calculatedVolume = (MAX_DISTANCE_SQUARED - distanceSquared) / DIVISOR;
+                calculatedVolume = Math.clamp(calculatedVolume, 0, 1);
+                //calculatedVolume = 1;
+                float adjustedVolume = wrapper.invokeGetAdjustedVolume((float) calculatedVolume, SoundSource.RECORDS);
 
-            wrapper.getInstanceToChannel().get(sound).execute(source -> source.setVolume(adjustedVolume));
-            //System.out.println(distanceSquared + " ==> " + calculatedVolume + " ==> " + adjustedVolume);
+                wrapper.getInstanceToChannel().get(sound).execute(source -> source.setVolume(adjustedVolume));
+                //System.out.println(distanceSquared + " ==> " + calculatedVolume + " ==> " + adjustedVolume);
 
-            // This doesn't actually modify the volume (once playing).
-            // However, it's an easy way to later check if this music disc sound is still hearable.
-            if(sound instanceof AbstractSoundInstanceAccessor modifiedSound) {
-                modifiedSound.setVolume(adjustedVolume);
+                // This doesn't actually modify the volume (once playing).
+                // However, it's an easy way to later check if this music disc sound is still hearable.
+                if (sound instanceof AbstractSoundInstanceWrapper modifiedSound) {
+                    modifiedSound.setVolume(adjustedVolume);
+                }
             }
         }
 
@@ -166,11 +169,11 @@ public abstract class JukeboxMixin {
     }
 
     @Unique
-    private void pauseMusic() {
-        SoundSystemWrapper wrapper = ((SoundSystemWrapper) this);
+    private void betterJukebox$pauseMusic() {
+        SoundEngineWrapper wrapper = ((SoundEngineWrapper) this);
 
         if (wrapper.isLoaded()) {
-            for(Map.Entry<SoundInstance, ChannelAccess.ChannelHandle> entry : wrapper.getInstanceToChannel().entrySet()) {
+            for (Map.Entry<SoundInstance, ChannelAccess.ChannelHandle> entry : wrapper.getInstanceToChannel().entrySet()) {
                 SoundInstance sound = entry.getKey();
 
                 if (sound.getSource() == SoundSource.MUSIC) {
@@ -187,16 +190,16 @@ public abstract class JukeboxMixin {
 
     /**
      * Continuous method call to fade out the background music
-     *
+     * <p>
      * TODO: It seems like this conflicts with MusicTracker's fade to volume, which is why the numbers are inconsistent
      * Potentially another HashMap?
      */
     @Unique
-    private void musicFadeOut() {
-        SoundSystemWrapper wrapper = ((SoundSystemWrapper) this);
+    private void betterJukebox$musicFadeOut() {
+        SoundEngineWrapper wrapper = ((SoundEngineWrapper) this);
 
         if (wrapper.isLoaded()) {
-            for(Map.Entry<SoundInstance, ChannelAccess.ChannelHandle> entry : wrapper.getInstanceToChannel().entrySet()) {
+            for (Map.Entry<SoundInstance, ChannelAccess.ChannelHandle> entry : wrapper.getInstanceToChannel().entrySet()) {
                 SoundInstance sound = entry.getKey();
                 float oldVolume = sound.getVolume();
 
@@ -207,13 +210,13 @@ public abstract class JukeboxMixin {
                     sourceManager.execute(source -> {
                         source.setVolume(newVolume);
 
-                        if(newVolume <= 0) {
+                        if (newVolume <= 0) {
                             sourceManager.execute(Channel::pause);
                         }
                     });
 
                     // Used to track the volume manually
-                    if(sound instanceof AbstractSoundInstanceAccessor modifiedSound) {
+                    if (sound instanceof AbstractSoundInstanceWrapper modifiedSound) {
                         modifiedSound.setVolume(newVolume);
                     }
 
@@ -224,11 +227,11 @@ public abstract class JukeboxMixin {
     }
 
     @Unique
-    private void resumeMusic() {
-        SoundSystemWrapper wrapper = ((SoundSystemWrapper) this);
+    private void betterJukebox$resumeMusic() {
+        SoundEngineWrapper wrapper = ((SoundEngineWrapper) this);
 
         if (wrapper.isLoaded()) {
-            for(Map.Entry<SoundInstance, ChannelAccess.ChannelHandle> entry : wrapper.getInstanceToChannel().entrySet()) {
+            for (Map.Entry<SoundInstance, ChannelAccess.ChannelHandle> entry : wrapper.getInstanceToChannel().entrySet()) {
                 SoundInstance sound = entry.getKey();
 
                 if (sound.getSource() == SoundSource.MUSIC) {
@@ -240,16 +243,16 @@ public abstract class JukeboxMixin {
 
     /**
      * Continuous method call to fade in the background music
-     *
+     * <p>
      * TODO: It seems like this conflicts with MusicTracker's fade to volume, which is why the numbers are inconsistent
      * Potentially another HashMap?
      */
     @Unique
-    private void musicFadeIn() {
-        SoundSystemWrapper wrapper = ((SoundSystemWrapper) this);
+    private void betterJukebox$musicFadeIn() {
+        SoundEngineWrapper wrapper = ((SoundEngineWrapper) this);
 
         if (wrapper.isLoaded()) {
-            for(Map.Entry<SoundInstance, ChannelAccess.ChannelHandle> entry : wrapper.getInstanceToChannel().entrySet()) {
+            for (Map.Entry<SoundInstance, ChannelAccess.ChannelHandle> entry : wrapper.getInstanceToChannel().entrySet()) {
                 SoundInstance sound = entry.getKey();
                 float oldVolume = sound.getVolume();
 
@@ -263,7 +266,7 @@ public abstract class JukeboxMixin {
                     });
 
                     // Used to track the volume manually
-                    if(sound instanceof AbstractSoundInstanceAccessor modifiedSound) {
+                    if (sound instanceof AbstractSoundInstanceWrapper modifiedSound) {
                         modifiedSound.setVolume(newVolume);
                     }
 
@@ -286,51 +289,3 @@ public abstract class JukeboxMixin {
         return ignoredCategories;
     }
 }
-
-/*@Mixin(Source.class)
-public abstract class JukeboxMixin {
-    @Shadow public abstract boolean isPlaying();
-
-    @Inject(method = "play", at = @At("HEAD"))
-    private void playInjected(CallbackInfo ci) {
-        System.out.println("PLAY TEST " + this.isPlaying());
-    }
-}*/
-
-// SoundSystem or SoundManager?
-// SoundSystem#play(Sound sound) -> SoundInstance -> AbstractSoundInstance -> PositionedSoundInstance
-/*@Mixin(SoundSystem.class)
-public abstract class JukeboxMixin {
-    @Inject(method = "play(Lnet/minecraft/client/sound/SoundInstance;)Lnet/minecraft/client/sound/SoundSystem$PlayResult;", at = @At("HEAD"))
-    private void playInjected(SoundInstance sound, CallbackInfoReturnable<SoundSystem.PlayResult> cir) {
-        // MUSIC // PositionedSoundInstance
-        // RECORDS // PositionedSoundInstance
-        System.out.println("PLAY TEST " + sound.getCategory() + " // " + sound.getClass().getSimpleName());
-    }
-}*/
-
-// Attempt to convert "record" type to match "music" type params, because apparently music is also a PositionedSoundInstance?!
-// volume = 1.0, notice how "relative = true" for music and ambient, could this be why?
-// If not, then notice how stereo sounds are always non-directional while mono sounds are, which might be a property of the audio stream.
-/*@Mixin(PositionedSoundInstance.class)
-public abstract class JukeboxMixin {
-    private SoundInstance.AttenuationType attenuationType;
-    private boolean relative;
-    private int x, y, z;
-
-    // Cleaner would be to inject/overwrite PositionedSoundInstance.record(), as it's the dedicated method for it
-    @Inject(method = "<init>(Lnet/minecraft/util/Identifier;Lnet/minecraft/sound/SoundCategory;FFLnet/minecraft/util/math/random/Random;ZILnet/minecraft/client/sound/SoundInstance$AttenuationType;DDDZ)V", at = @At("TAIL"))
-    private void initInjected(Identifier id, SoundCategory category, float volume, float pitch, Random random, boolean repeat, int repeatDelay, SoundInstance.AttenuationType attenuationType, double x, double y, double z, boolean relative, CallbackInfo ci) {
-        if(category == SoundCategory.RECORDS) {
-            //System.out.println(attenuationType);
-            // This doesn't work because "this" doesn't actually reference the injected class
-            // Nor can you seem to modify method parameters
-            attenuationType = SoundInstance.AttenuationType.NONE;
-            relative = true;
-            x = 0;
-            y = 0;
-            z = 0;
-            System.out.println(this);
-        }
-    }
-}*/

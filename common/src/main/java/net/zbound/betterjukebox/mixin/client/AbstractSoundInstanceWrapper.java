@@ -1,4 +1,4 @@
-package net.zbound.betterjukebox.mixin;
+package net.zbound.betterjukebox.mixin.client;
 
 import net.minecraft.client.resources.sounds.AbstractSoundInstance;
 import net.minecraft.client.resources.sounds.SoundInstance;
@@ -7,7 +7,7 @@ import org.spongepowered.asm.mixin.gen.Accessor;
 
 // This is required to forcefully modify the protected fields
 @Mixin(AbstractSoundInstance.class)
-public interface AbstractSoundInstanceAccessor {
+public interface AbstractSoundInstanceWrapper {
     /**
      * Sets whether or not the sound fades as you move away from the source (and theoretically the different levels of fading).
      * However, setting the sound to relative renders this field pointless, as relative sounds are global.
@@ -17,6 +17,7 @@ public interface AbstractSoundInstanceAccessor {
 
     /**
      * Sets a sound to be relative to the client (player), meaning it's effectively a global sound. Used for music/ambient sounds.
+     *
      * @param isRelative
      */
     @Accessor("relative")
@@ -28,8 +29,9 @@ public interface AbstractSoundInstanceAccessor {
      * Maybe put inject it into the tick() function?
      * Setting above the default 4.0F for music discs won't increase the volume, so it's not going to blast out your ears if you do.
      * It looks like this is how Minecraft does it actually in SoundSystem#getAdjustedVolume(), where the volume is set to 0 to 1, also multiplied by sounds percent slider.
-     *
+     * <p>
      * This only works if you set it initially (at the top of SoundSystem#play()), not when it's already playing.
+     *
      * @param volume
      */
     @Accessor("volume")

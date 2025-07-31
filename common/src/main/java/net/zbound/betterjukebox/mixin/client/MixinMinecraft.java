@@ -1,4 +1,4 @@
-package net.zbound.betterjukebox.mixin;
+package net.zbound.betterjukebox.mixin.client;
 
 import net.zbound.betterjukebox.Constants;
 import net.minecraft.client.Minecraft;
