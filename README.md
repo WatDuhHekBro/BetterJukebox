@@ -16,9 +16,7 @@ A variety of jukebox tweaks to make them behave like background music instead of
 
 # Known Issues
 
-- Small HashMap memory leak in stored coordinates, not exactly clear yet what's the best way to resolve, but probably insignificant
-
-# Project Cleanup
+## Project Cleanup
 
 - Remove unnecessary template files (e.g. server/main)
 - Is the main client needed?

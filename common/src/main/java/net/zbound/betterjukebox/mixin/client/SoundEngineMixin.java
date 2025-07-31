@@ -1,6 +1,5 @@
 package net.zbound.betterjukebox.mixin.client;
 
-import com.google.common.collect.Multimap;
 import com.mojang.blaze3d.audio.Channel;
 import net.minecraft.client.resources.sounds.SoundInstance;
 import net.minecraft.client.sounds.ChannelAccess;
@@ -41,8 +40,6 @@ public abstract class SoundEngineMixin {
     private static final float MUSIC_VOLUME_PER_TICK_TO_FADE_IN = 1f / TICKS_TO_FULLY_FADE_IN;
     /**
      * Used to track the original coordinates of jukebox sounds.
-     * <p>
-     * TODO: Fix the memory leak by somehow listening for when the SoundInstance is removed/stopped.
      */
     @Unique
     private static final Map<SoundInstance, Vec3> coordinates = new HashMap<>();
@@ -79,11 +76,10 @@ public abstract class SoundEngineMixin {
         }
     }
 
-    @Inject(method = "tick(Z)V", at = @At("TAIL"))
+    @Inject(method = "tick(Z)V", at = @At("HEAD"))
     private void injectTick(boolean isPaused, CallbackInfo ci) {
-        Multimap<SoundSource, SoundInstance> sounds = wrapper.getInstanceBySource();
         // Neither music/ambient/records are considered ticking sounds, so looping through ticking sounds is empty
-        Collection<SoundInstance> records = sounds.get(SoundSource.RECORDS);
+        Collection<SoundInstance> records = wrapper.getInstanceBySource().get(SoundSource.RECORDS);
         long amountRecordsHearable = records.stream().filter(sound -> sound.getVolume() > 0).count();
         Vec3 playerPosition = wrapper.getListener().getTransform().position();
 
@@ -93,51 +89,64 @@ public abstract class SoundEngineMixin {
             betterJukebox$musicFadeIn();
         }
 
-        // Dynamically set the volume of each music disc based on the player's distance from the corresponding jukebox.
         for (SoundInstance sound : records) {
-            /*
-             * Distance
-             * --------
-             * Let's say a max distance of 40 blocks and a min distance of 20 blocks
-             * 0-20 blocks distance is volume 1 and 40+ blocks is volume 0
-             * 0-400 distanceSquared is volume 1 and 1600+ blocks is volume 0
-             *
-             * 1600 - 1681 < 0
-             *
-             * 1600 - 1600 = 0
-             * - 0 / 1600 = 0
-             * - 0 / 1200 = 0
-             *
-             * 1600 - 1521 = 79
-             * - 79 / 1600 = 0.049
-             * - 79 / 1200 = 0.06
-             *
-             * 1600 - 900 = 700
-             * - 700 / 1200 = 0.58 (midpoint is slightly above half volume)
-             *
-             * 1600 - 400 = 1200
-             * - 1200 / 1600 = 0.75 (doesn't take min into account)
-             * - 1200 / 1200 = 1
-             *
-             * 1600 - 1 = 1599
-             * - 1599 / 1600 = 0.99
-             * - 1599 / 1200 > 1
-             *
-             * 1600 - 0 = 1600
-             * - 1600 / 1600 = 1
-             * - 1600 / 1200 > 1
-             */
-            double distanceSquared = playerPosition.distanceToSqr(coordinates.get(sound));
-            double calculatedVolume = (MAX_DISTANCE_SQUARED - distanceSquared) / DIVISOR;
-            calculatedVolume = Math.clamp(calculatedVolume, 0, 1);
-            float adjustedVolume = wrapper.calculateAdjustedVolume((float) calculatedVolume, SoundSource.RECORDS);
+            // Dynamically set the volume of each music disc based on the player's distance from the corresponding jukebox.
+            // Make sure that the coordinates still exist, otherwise it might throw a NullPointerException while the sound is being removed.
+            if (coordinates.containsKey(sound)) {
+                /*
+                 * Distance
+                 * --------
+                 * Let's say a max distance of 40 blocks and a min distance of 20 blocks
+                 * 0-20 blocks distance is volume 1 and 40+ blocks is volume 0
+                 * 0-400 distanceSquared is volume 1 and 1600+ blocks is volume 0
+                 *
+                 * 1600 - 1681 < 0
+                 *
+                 * 1600 - 1600 = 0
+                 * - 0 / 1600 = 0
+                 * - 0 / 1200 = 0
+                 *
+                 * 1600 - 1521 = 79
+                 * - 79 / 1600 = 0.049
+                 * - 79 / 1200 = 0.06
+                 *
+                 * 1600 - 900 = 700
+                 * - 700 / 1200 = 0.58 (midpoint is slightly above half volume)
+                 *
+                 * 1600 - 400 = 1200
+                 * - 1200 / 1600 = 0.75 (doesn't take min into account)
+                 * - 1200 / 1200 = 1
+                 *
+                 * 1600 - 1 = 1599
+                 * - 1599 / 1600 = 0.99
+                 * - 1599 / 1200 > 1
+                 *
+                 * 1600 - 0 = 1600
+                 * - 1600 / 1600 = 1
+                 * - 1600 / 1200 > 1
+                 */
+                double distanceSquared = playerPosition.distanceToSqr(coordinates.get(sound));
+                double calculatedVolume = (MAX_DISTANCE_SQUARED - distanceSquared) / DIVISOR;
+                calculatedVolume = Math.clamp(calculatedVolume, 0, 1);
+                float adjustedVolume = wrapper.calculateAdjustedVolume((float) calculatedVolume, SoundSource.RECORDS);
 
-            wrapper.getInstanceToChannel().get(sound).execute(source -> source.setVolume(adjustedVolume));
-            //System.out.println(distanceSquared + " ==> " + calculatedVolume + " ==> " + adjustedVolume);
+                wrapper.getInstanceToChannel().get(sound).execute(source -> source.setVolume(adjustedVolume));
+                //System.out.println(distanceSquared + " ==> " + calculatedVolume + " ==> " + adjustedVolume);
 
-            if (sound instanceof AbstractSoundInstanceWrapper modifiedSound) {
-                modifiedSound.trackVolumeForReferenceOnly(adjustedVolume);
+                if (sound instanceof AbstractSoundInstanceWrapper modifiedSound) {
+                    modifiedSound.trackVolumeForReferenceOnly(adjustedVolume);
+                }
             }
+
+            // Make sure the injected function is at HEAD, so it can check if the sound is stopped (before the original function removes the SoundInstance). This way, you can avoid the memory leak with the HashMap.
+            ChannelAccess.ChannelHandle sourceManager = wrapper.getInstanceToChannel().get(sound);
+            //System.out.println("Stopped? / coordinates has entry?: " + sourceManager.isStopped() + " & " + coordinates.containsKey(sound));
+
+            if (sourceManager.isStopped()) {
+                coordinates.remove(sound);
+            }
+
+            //System.out.println("Size of coordinates after removing: " + coordinates.size());
         }
     }
 
@@ -160,33 +169,32 @@ public abstract class SoundEngineMixin {
             return;
         }
 
-        for (Map.Entry<SoundInstance, ChannelAccess.ChannelHandle> entry : wrapper.getInstanceToChannel().entrySet()) {
-            SoundInstance sound = entry.getKey();
+        // Avoid looping through unnecessary entries
+        Collection<SoundInstance> music = wrapper.getInstanceBySource().get(SoundSource.MUSIC);
 
-            if (sound.getSource() == SoundSource.MUSIC) {
-                ChannelAccess.ChannelHandle sourceManager = entry.getValue();
-                float maxVolume = sound.getVolume(); // Usually 1.0 for C418 music and 0.4 for newer music
+        for (SoundInstance sound : music) {
+            ChannelAccess.ChannelHandle sourceManager = wrapper.getInstanceToChannel().get(sound);
+            float maxVolume = sound.getVolume(); // Usually 1.0 for C418 music and 0.4 for newer music
 
-                sourceManager.execute(source -> {
-                    // Originally, unpausing the game briefly resumed the music before it got paused again, resulting in what effectively sounds like an audio glitch.
-                    // The good news is that by making sure the volume is zero first, it effectively solves this issue by playing that brief audio clip at zero volume.
-                    // Before, it would briefly unpause at volume 1.0 for example, whereas with this, it briefly unpauses at volume 0.0.
-                    // Theoretically, the only time you might notice it is when rapidly pausing/unpausing as the music is fading out, but I can't seem to notice it, so it should be fine.
-                    source.setVolume(wrapper.calculateAdjustedVolume(maxVolume * currentMusicVolumeFactor, SoundSource.MUSIC));
+            sourceManager.execute(source -> {
+                // Originally, unpausing the game briefly resumed the music before it got paused again, resulting in what effectively sounds like an audio glitch.
+                // The good news is that by making sure the volume is zero first, it effectively solves this issue by playing that brief audio clip at zero volume.
+                // Before, it would briefly unpause at volume 1.0 for example, whereas with this, it briefly unpauses at volume 0.0.
+                // Theoretically, the only time you might notice it is when rapidly pausing/unpausing as the music is fading out, but I can't seem to notice it, so it should be fine.
+                source.setVolume(wrapper.calculateAdjustedVolume(maxVolume * currentMusicVolumeFactor, SoundSource.MUSIC));
 
-                    if (currentMusicVolumeFactor <= 0 && !wasMusicPaused) {
-                        sourceManager.execute(Channel::pause);
-                        wasMusicPaused = true;
-                        //System.out.println("Pausing music...");
-                    } else if (currentMusicVolumeFactor > 0 && wasMusicPaused) {
-                        sourceManager.execute(Channel::unpause);
-                        wasMusicPaused = false;
-                        //System.out.println("Resuming music...");
-                    }
+                if (currentMusicVolumeFactor <= 0 && !wasMusicPaused) {
+                    sourceManager.execute(Channel::pause);
+                    wasMusicPaused = true;
+                    //System.out.println("Pausing music...");
+                } else if (currentMusicVolumeFactor > 0 && wasMusicPaused) {
+                    sourceManager.execute(Channel::unpause);
+                    wasMusicPaused = false;
+                    //System.out.println("Resuming music...");
+                }
 
-                    //System.out.println("Music Volume Adjustment: " + maxVolume + " * " + currentMusicVolumeFactor + " = " + maxVolume * currentMusicVolumeFactor + " (" + wasMusicPaused + ")");
-                });
-            }
+                //System.out.println("Music Volume Adjustment: " + maxVolume + " * " + currentMusicVolumeFactor + " = " + maxVolume * currentMusicVolumeFactor + " (" + wasMusicPaused + ")");
+            });
         }
     }
 
@@ -222,13 +230,13 @@ public abstract class SoundEngineMixin {
             return;
         }
 
-        for (Map.Entry<SoundInstance, ChannelAccess.ChannelHandle> entry : wrapper.getInstanceToChannel().entrySet()) {
-            SoundInstance sound = entry.getKey();
+        // Avoid looping through unnecessary entries
+        Collection<SoundInstance> music = wrapper.getInstanceBySource().get(SoundSource.MUSIC);
 
-            if (sound.getSource() == SoundSource.MUSIC) {
-                entry.getValue().execute(Channel::pause);
-                //System.out.println("Pausing music...");
-            }
+        for (SoundInstance sound : music) {
+            ChannelAccess.ChannelHandle sourceManager = wrapper.getInstanceToChannel().get(sound);
+            sourceManager.execute(Channel::pause);
+            //System.out.println("Pausing music...");
         }
     }
 }
