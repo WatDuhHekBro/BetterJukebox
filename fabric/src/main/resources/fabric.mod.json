@@ -16,7 +16,7 @@
     "environment": "*",
     "entrypoints": {
         "main": [
-            "net.zbound.multiloadertest.MultiLoaderTest"
+            "net.zbound.betterjukebox.BetterJukebox"
         ]
     },
     "mixins": [
