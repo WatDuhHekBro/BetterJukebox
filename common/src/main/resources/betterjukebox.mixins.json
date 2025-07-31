@@ -6,7 +6,10 @@
   "compatibilityLevel": "JAVA_18",
   "mixins": [],
   "client": [
-    "MixinMinecraft"
+    "AbstractSoundInstanceAccessor",
+    "JukeboxMixin",
+    "MixinMinecraft",
+    "SoundSystemWrapper"
   ],
   "server": [],
   "injectors": {
