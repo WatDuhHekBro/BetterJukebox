@@ -10,9 +10,7 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.ModifyVariable;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
-import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 import java.util.Collection;
 import java.util.HashMap;
@@ -59,7 +57,7 @@ public abstract class SoundEngineMixin {
     private boolean wasMusicPaused = false;
 
     @Inject(method = "play", at = @At("HEAD"))
-    private void injectPlay(SoundInstance sound, CallbackInfoReturnable<SoundEngine.PlayResult> cir) {
+    private void injectPlay(SoundInstance sound, CallbackInfo ci) {
         if (sound.getSource() == SoundSource.RECORDS && sound instanceof AbstractSoundInstanceWrapper modifiedSound) {
             modifiedSound.setRelative(true);
             // Attenuation still has an impact if the relative coordinates are far from the player, but isn't useful in this case.
@@ -81,7 +79,7 @@ public abstract class SoundEngineMixin {
         // Neither music/ambient/records are considered ticking sounds, so looping through ticking sounds is empty
         Collection<SoundInstance> records = wrapper.getInstanceBySource().get(SoundSource.RECORDS);
         long amountRecordsHearable = records.stream().filter(sound -> sound.getVolume() > 0).count();
-        Vec3 playerPosition = wrapper.getListener().getTransform().position();
+        Vec3 playerPosition = wrapper.getListener().getListenerPosition();
 
         if (amountRecordsHearable > 0) {
             musicFadeOut();
@@ -127,7 +125,7 @@ public abstract class SoundEngineMixin {
                  */
                 double distanceSquared = playerPosition.distanceToSqr(coordinates.get(sound));
                 double calculatedVolume = (MAX_DISTANCE_SQUARED - distanceSquared) / DIVISOR;
-                calculatedVolume = Math.clamp(calculatedVolume, 0, 1);
+                calculatedVolume = Math.max(0, Math.min(1, calculatedVolume));
                 float adjustedVolume = wrapper.calculateAdjustedVolume((float) calculatedVolume, SoundSource.RECORDS);
 
                 wrapper.getInstanceToChannel().get(sound).execute(source -> source.setVolume(adjustedVolume));
@@ -148,19 +146,6 @@ public abstract class SoundEngineMixin {
 
             //System.out.println("Size of coordinates after removing: " + coordinates.size());
         }
-    }
-
-    /**
-     * Prevents music discs from being paused in the pause screen, treating them like background music.
-     */
-    @ModifyVariable(method = "pauseAllExcept", at = @At("HEAD"), argsOnly = true)
-    private SoundSource[] injectIgnoredSoundCategories(SoundSource... categories) {
-        SoundSource[] ignoredCategories = new SoundSource[categories.length + 1];
-
-        System.arraycopy(categories, 0, ignoredCategories, 0, categories.length);
-        ignoredCategories[categories.length] = SoundSource.RECORDS;
-
-        return ignoredCategories;
     }
 
     @Unique
