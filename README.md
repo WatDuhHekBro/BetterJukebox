@@ -13,8 +13,11 @@ A variety of jukebox tweaks to make them behave like background music instead of
 # Goals
 
 - Add config options for jukebox distance & ticks to fade in/out
+- Music Toasts replacement?
 
 # Known Issues
+
+- Unpausing the game may briefly play background music even if it's paused, resulting in what sounds like an audio glitch.
 
 ## Project Cleanup
 
